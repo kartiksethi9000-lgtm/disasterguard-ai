@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DisasterGuard AI — Early Warning Command Center</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+:root{
+  --bg-0:#0b0f14;
+  --bg-1:#121821;
+  --bg-2:#1a222d;
+  --line:#2a3441;
+  --text-hi:#eef2f6;
+  --text-mid:#9aa8b8;
+  --text-lo:#5e6b7a;
+  --safe:#3fb28f;
+  --watch:#f2b544;
+  --warn:#f2843a;
+  --critical:#e64545;
+  --accent:#4fb0ff;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(79,176,255,0.08), transparent 60%),
+    radial-gradient(1000px 500px at 100% 0%, rgba(230,69,69,0.06), transparent 55%),
+    var(--bg-0);
+  color:var(--text-hi);
+  font-family:'Inter',sans-serif;
+  min-height:100vh;
+}
+.wrap{max-width:1280px;margin:0 auto;padding:28px 24px 60px;}
+
+/* ---- header ---- */
+.topbar{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:22px;flex-wrap:wrap;}
+.brand{display:flex;align-items:center;gap:14px;}
+.brand-mark{width:44px;height:44px;border-radius:10px;background:linear-gradient(155deg,#1a222d,#0b0f14);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative;}
+.brand-mark::before{content:"";position:absolute;width:16px;height:16px;border-radius:50%;background:var(--critical);box-shadow:0 0 0 4px rgba(230,69,69,0.15);animation:pulse 2.2s infinite;}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(230,69,69,0.4);}70%{box-shadow:0 0 0 10px rgba(230,69,69,0);}100%{box-shadow:0 0 0 0 rgba(230,69,69,0);}}
+.brand h1{font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:30px;letter-spacing:0.5px;margin:0;text-transform:uppercase;}
+.brand p{margin:2px 0 0;color:var(--text-mid);font-size:13px;letter-spacing:0.3px;}
+.status-chip{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-mid);background:var(--bg-1);border:1px solid var(--line);padding:8px 14px;border-radius:20px;}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--safe);}
+.status-dot.live{background:var(--accent);animation:blink 1.4s infinite;}
+@keyframes blink{50%{opacity:0.3;}}
+
+/* ---- layout grid ---- */
+.grid{display:grid;grid-template-columns:1.05fr 1fr;gap:20px;}
+@media(max-width:940px){.grid{grid-template-columns:1fr;}}
+.panel{background:var(--bg-1);border:1px solid var(--line);border-radius:14px;padding:18px 18px 20px;}
+.panel h2{font-family:'Barlow Condensed',sans-serif;font-size:15px;letter-spacing:1.5px;text-transform:uppercase;color:var(--text-mid);margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:10.5px;letter-spacing:1px;color:var(--text-lo);}
+
+/* ---- city risk cards ---- */
+.cities{display:flex;flex-direction:column;gap:10px;}
+.city-card{background:var(--bg-2);border:1px solid var(--line);border-left:4px solid var(--safe);border-radius:10px;padding:12px 14px;cursor:pointer;transition:transform .15s ease,border-color .2s ease;}
+.city-card:hover{transform:translateY(-1px);}
+.city-card.watch{border-left-color:var(--watch);}
+.city-card.warn{border-left-color:var(--warn);}
+.city-card.critical{border-left-color:var(--critical);}
+.city-card.selected{outline:1px solid var(--accent);}
+.city-row1{display:flex;justify-content:space-between;align-items:baseline;}
+.city-name{font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:19px;}
+.city-region{color:var(--text-lo);font-size:11.5px;font-family:'JetBrains Mono',monospace;}
+.risk-badge{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;letter-spacing:0.5px;}
+.risk-badge.safe{background:rgba(63,178,143,0.14);color:var(--safe);}
+.risk-badge.watch{background:rgba(242,181,68,0.14);color:var(--watch);}
+.risk-badge.warn{background:rgba(242,132,58,0.14);color:var(--warn);}
+.risk-badge.critical{background:rgba(230,69,69,0.16);color:var(--critical);}
+.city-metrics{display:flex;gap:16px;margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-mid);}
+.metric b{color:var(--text-hi);font-weight:600;}
+.riskbar-track{height:4px;background:var(--bg-0);border-radius:3px;margin-top:9px;overflow:hidden;}
+.riskbar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
+
+/* ---- map ---- */
+#map{height:340px;border-radius:10px;border:1px solid var(--line);}
+.leaflet-popup-content-wrapper{background:var(--bg-2);color:var(--text-hi);border-radius:8px;}
+.leaflet-popup-tip{background:var(--bg-2);}
+
+/* ---- alert log ---- */
+.log{display:flex;flex-direction:column;gap:8px;max-height:230px;overflow-y:auto;padding-right:4px;}
+.log::-webkit-scrollbar{width:6px;}
+.log::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px;}
+.log-item{display:flex;gap:10px;font-size:12.5px;padding:9px 10px;background:var(--bg-2);border-radius:8px;border:1px solid var(--line);}
+.log-item .tag{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 7px;border-radius:5px;height:fit-content;white-space:nowrap;}
+.log-item .tag.sms{background:rgba(79,176,255,0.14);color:var(--accent);}
+.log-item .tag.map{background:rgba(63,178,143,0.14);color:var(--safe);}
+.log-item .body b{color:var(--text-hi);}
+.log-item .ts{color:var(--text-lo);font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-left:auto;white-space:nowrap;}
+.empty-log{color:var(--text-lo);font-size:12.5px;font-family:'JetBrains Mono',monospace;padding:20px 0;text-align:center;}
+
+/* ---- engine panel ---- */
+.engine-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px;}
+.engine-row:last-child{border-bottom:none;}
+.engine-row .lbl{color:var(--text-mid);}
+.engine-row .val{font-family:'JetBrains Mono',monospace;color:var(--text-hi);}
+.thresh-note{margin-top:12px;font-size:11.5px;color:var(--text-lo);line-height:1.6;font-family:'JetBrains Mono',monospace;}
+
+.footer-note{margin-top:22px;padding:16px 18px;border:1px dashed var(--line);border-radius:10px;font-size:12.5px;color:var(--text-mid);line-height:1.7;}
+.footer-note b{color:var(--text-hi);}
+.refresh-btn{background:var(--bg-2);border:1px solid var(--line);color:var(--text-hi);font-family:'JetBrains Mono',monospace;font-size:11.5px;padding:6px 12px;border-radius:8px;cursor:pointer;transition:border-color .2s;}
+.refresh-btn:hover{border-color:var(--accent);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <div>
+        <h1>DisasterGuard AI</h1>
+        <p>Live meteorological risk monitoring &amp; alert dispatch</p>
+      </div>
+    </div>
+    <div class="status-chip"><span class="status-dot live" id="statusDot"></span><span id="statusText">INITIALIZING…</span></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Monitored Zones <span class="eyebrow" id="zoneCount">0 STATIONS</span></h2>
+      <div class="cities" id="cityList"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Danger Map <button class="refresh-btn" id="refreshBtn">↻ REFRESH DATA</button> <button class="refresh-btn" id="eventBtn" style="margin-left:6px;">⚡ SIMULATE EVENT</button></h2>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="grid" style="margin-top:20px;">
+    <div class="panel">
+      <h2>Alert Dispatch Log <span class="eyebrow">SIMULATED SMS</span></h2>
+      <div class="log" id="alertLog"><div class="empty-log">No alerts dispatched yet — monitoring in progress…</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Risk Engine <span class="eyebrow">RULE-BASED v0.1</span></h2>
+      <div class="engine-row"><span class="lbl">Data source</span><span class="val">local simulation</span></div>
+      <div class="engine-row"><span class="lbl">Signals used</span><span class="val">precip, wind, temp</span></div>
+      <div class="engine-row"><span class="lbl">Refresh interval</span><span class="val">15s</span></div>
+      <div class="engine-row"><span class="lbl">Composite score</span><span class="val">0–100 scale</span></div>
+      <div class="thresh-note">
+        SAFE &lt; 30 · WATCH 30–54 · WARNING 55–74 · CRITICAL ≥ 75<br>
+        Flood weight: precipitation rate · Storm weight: sustained wind · Heat weight: temperature deviation
+      </div>
+    </div>
+  </div>
+
+  <div class="footer-note">
+    <b>What's real vs. simulated in this demo:</b> The map is real (OpenStreetMap tiles, real city coordinates). Weather readings are a <b>local simulation</b> — realistic per-city climate profiles (Mumbai/Kolkata/Guwahati skew flood-prone, Bhubaneswar/Chennai skew cyclone, Indore skews heat) that drift over time and occasionally spike, rather than a live external feed, since this sandboxed demo can't reliably make outbound API calls. Risk scores are computed with the transparent rule-based thresholds shown in the Risk Engine panel — a genuine trained ML predictor would need historical disaster-outcome data (e.g. NDMA/NOAA incident records) to train against. SMS dispatch is <b>simulated</b> in the log: real delivery needs a small backend holding your Twilio Account SID/Auth Token, since those secrets can't live in browser code. Ask me and I'll build the real weather-API backend, the Twilio dispatcher, or the ML training pipeline when you're ready to go past the demo stage.
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const CITIES = [
+  {name:"Mumbai",    region:"Maharashtra · Coastal/Flood",  lat:19.0760, lon:72.8777, hazard:"flood"},
+  {name:"Guwahati",  region:"Assam · Riverine Flood",        lat:26.1445, lon:91.7362, hazard:"flood"},
+  {name:"Bhubaneswar",region:"Odisha · Cyclone Belt",        lat:20.2961, lon:85.8245, hazard:"cyclone"},
+  {name:"Chennai",   region:"Tamil Nadu · Cyclone/Flood",    lat:13.0827, lon:80.2707, hazard:"cyclone"},
+  {name:"Indore",    region:"Madhya Pradesh · Heat/Storm",   lat:22.7196, lon:75.8577, hazard:"heat"},
+  {name:"Kolkata",   region:"West Bengal · Delta Flood",     lat:22.5726, lon:88.3639, hazard:"flood"},
+];
+
+let map, markers = {}, cityData = {}, selectedCity = null, alertedCities = new Set();
+let tick = 0;
+let forcedEvent = null; // {city, hazard}
+
+// per-city baseline climate profile
+const PROFILE = {
+  Mumbai:      {baseTemp:29, baseWind:14, baseRain:1.5, hazard:'flood'},
+  Guwahati:    {baseTemp:28, baseWind:10, baseRain:2.0, hazard:'flood'},
+  Bhubaneswar: {baseTemp:31, baseWind:16, baseRain:1.0, hazard:'cyclone'},
+  Chennai:     {baseTemp:32, baseWind:15, baseRain:0.8, hazard:'cyclone'},
+  Indore:      {baseTemp:34, baseWind:11, baseRain:0.4, hazard:'heat'},
+  Kolkata:     {baseTemp:30, baseWind:12, baseRain:1.8, hazard:'flood'},
+};
+
+function initMap(){
+  map = L.map('map',{zoomControl:true,attributionControl:false}).setView([21.5,80],4.4);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:12}).addTo(map);
+}
+
+function riskColor(level){
+  return {safe:'#3fb28f',watch:'#f2b544',warn:'#f2843a',critical:'#e64545'}[level];
+}
+
+function simulateHourly(c, t){
+  const p = PROFILE[c.name];
+  const isForced = forcedEvent && forcedEvent.city === c.name;
+  const spikeChance = isForced ? 1 : 0.06; // small organic chance of a real-looking spike each refresh
+  const willSpike = Math.random() < spikeChance;
+
+  const precip = [], wind = [], temp = [];
+  for(let h=0; h<12; h++){
+    const wave = Math.sin((t + h)/4);
+    let rain = Math.max(0, p.baseRain + wave*0.8 + (Math.random()-0.3)*0.6);
+    let w    = Math.max(0, p.baseWind + wave*3 + (Math.random()-0.4)*3);
+    let tmp  = p.baseTemp + wave*1.5 + (Math.random()-0.5)*1.2;
+
+    if(willSpike){
+      const hz = isForced ? forcedEvent.hazard : p.hazard;
+      if(hz==='flood') rain += 8 + Math.random()*6;
+      if(hz==='cyclone'){ w += 25 + Math.random()*15; rain += 3+Math.random()*3; }
+      if(hz==='heat') tmp += 6 + Math.random()*3;
+    }
+    precip.push(rain); wind.push(w); temp.push(tmp);
+  }
+  return {precipitation:precip, wind_speed_10m:wind, temperature_2m:temp};
+}
+
+function computeRisk(hourly){
+  // pull peak values over next 12h as a simple "prediction" horizon
+  const precipMax = Math.max(...hourly.precipitation.slice(0,12));
+  const windMax   = Math.max(...hourly.wind_speed_10m.slice(0,12));
+  const tempMax   = Math.max(...hourly.temperature_2m.slice(0,12));
+
+  const floodScore = Math.min(100, precipMax * 9);        // ~ >8mm/h heavy rain
+  const stormScore = Math.min(100, Math.max(0, (windMax-15)*3.2));
+  const heatScore  = Math.min(100, Math.max(0, (tempMax-38)*7));
+
+  const composite = Math.round(Math.max(floodScore, stormScore, heatScore));
+  let level = 'safe';
+  if(composite>=75) level='critical';
+  else if(composite>=55) level='warn';
+  else if(composite>=30) level='watch';
+
+  let driver = 'Nominal conditions';
+  if(composite===Math.round(floodScore) && floodScore>=30) driver = `Heavy rainfall — ${precipMax.toFixed(1)}mm/h peak`;
+  if(composite===Math.round(stormScore) && stormScore>=30) driver = `High winds — ${windMax.toFixed(0)}km/h peak`;
+  if(composite===Math.round(heatScore) && heatScore>=30) driver = `Extreme heat — ${tempMax.toFixed(0)}°C peak`;
+
+  return {composite, level, precipMax, windMax, tempMax, driver};
+}
+
+function timeStr(){
+  return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+
+function logEvent(tagClass, tagText, html){
+  const log = document.getElementById('alertLog');
+  const empty = log.querySelector('.empty-log');
+  if(empty) empty.remove();
+  const item = document.createElement('div');
+  item.className='log-item';
+  item.innerHTML = `<span class="tag ${tagClass}">${tagText}</span><span class="body">${html}</span><span class="ts">${timeStr()}</span>`;
+  log.prepend(item);
+}
+
+function renderCities(){
+  const list = document.getElementById('cityList');
+  list.innerHTML='';
+  document.getElementById('zoneCount').textContent = `${CITIES.length} STATIONS`;
+
+  CITIES.forEach(c=>{
+    const d = cityData[c.name];
+    const card = document.createElement('div');
+    card.className = 'city-card' + (d? ' '+d.level : '') + (selectedCity===c.name?' selected':'');
+    card.onclick = ()=>{ selectedCity=c.name; renderCities(); map.setView([c.lat,c.lon],7); markers[c.name]?.openPopup(); };
+
+    if(!d){
+      card.innerHTML = `<div class="city-row1"><span class="city-name">${c.name}</span><span class="risk-badge safe">LOADING</span></div>
+        <div class="city-region">${c.region}</div>`;
+    } else {
+      card.innerHTML = `
+        <div class="city-row1">
+          <span class="city-name">${c.name}</span>
+          <span class="risk-badge ${d.level}">${d.level.toUpperCase()} · ${d.composite}</span>
+        </div>
+        <div class="city-region">${c.region}</div>
+        <div class="city-metrics">
+          <span class="metric">🌧 <b>${d.precipMax.toFixed(1)}</b>mm/h</span>
+          <span class="metric">💨 <b>${d.windMax.toFixed(0)}</b>km/h</span>
+          <span class="metric">🌡 <b>${d.tempMax.toFixed(0)}</b>°C</span>
+        </div>
+        <div class="riskbar-track"><div class="riskbar-fill" style="width:${d.composite}%;background:${riskColor(d.level)}"></div></div>
+      `;
+    }
+    list.appendChild(card);
+  });
+}
+
+function upsertMarker(c,d){
+  if(markers[c.name]) map.removeLayer(markers[c.name]);
+  const color = riskColor(d.level);
+  const marker = L.circleMarker([c.lat,c.lon],{
+    radius: d.level==='critical'?14:d.level==='warn'?11:d.level==='watch'?9:7,
+    color, fillColor:color, fillOpacity:0.55, weight:2
+  }).addTo(map);
+  marker.bindPopup(`<b>${c.name}</b><br>${d.driver}<br>Composite risk: <b>${d.composite}/100</b>`);
+  markers[c.name]=marker;
+}
+
+async function dispatchAlertIfNeeded(c,d){
+  if((d.level==='warn' || d.level==='critical') && !alertedCities.has(c.name+d.level)){
+    alertedCities.add(c.name+d.level);
+    const radiusKm = d.level==='critical'?15:8;
+    logEvent('sms','SMS SENT', `<b>${c.name}</b>: alert dispatched to residents within ~${radiusKm}km — "${d.driver}. Seek higher ground / shelter, monitor local advisories."`);
+    logEvent('map','ZONE FLAGGED', `<b>${c.name}</b> marked ${d.level.toUpperCase()} on live map, composite score ${d.composite}/100.`);
+  }
+}
+
+function refreshCity(c){
+  const hourly = simulateHourly(c, tick);
+  const d = computeRisk(hourly);
+  cityData[c.name] = d;
+  upsertMarker(c,d);
+  dispatchAlertIfNeeded(c,d);
+}
+
+function refreshAll(){
+  document.getElementById('statusText').textContent = 'UPDATING…';
+  tick += 1;
+  CITIES.forEach(refreshCity);
+  forcedEvent = null;
+  document.getElementById('statusText').textContent = `SIMULATED FEED · UPDATED ${timeStr()}`;
+  renderCities();
+}
+
+document.getElementById('refreshBtn').onclick = refreshAll;
+document.getElementById('eventBtn').onclick = ()=>{
+  const pick = CITIES[Math.floor(Math.random()*CITIES.length)];
+  forcedEvent = {city: pick.name, hazard: PROFILE[pick.name].hazard};
+  logEvent('map','EVENT TRIGGERED', `Manually injected a ${forcedEvent.hazard} spike at <b>${pick.name}</b> for demo purposes.`);
+  refreshAll();
+};
+
+initMap();
+renderCities();
+refreshAll();
+setInterval(refreshAll, 15000);
+</script>
+</body>
+</html>
